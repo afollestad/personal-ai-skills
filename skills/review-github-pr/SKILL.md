@@ -36,7 +36,7 @@ If the user provides a URL, extract the repo and PR number from it. For private 
 - Read the **complete diff**, not just individual chunks. Understand the full scope of changes.
 - Consider how changes across multiple files relate to each other.
 - Check for correctness, security, performance, readability, and maintainability.
-- **Do not include fluff, praise, or "LGTM"-style commentary.** Only include actionable findings: critical issues (P0/P1) and nits (P2/P3). Every comment must point to a specific problem or concrete suggestion.
+- **Do not include fluff, praise, or "LGTM"-style commentary.** Only include actionable findings: critical issues (P0/P1) and nits (P2/P3). Every comment must point to a specific problem or concrete suggestion. Comments that merely note something is "a good change" or compliment the author are not actionable — omit them entirely.
 
 ### 3. Generate prioritized comments
 
@@ -66,37 +66,18 @@ The user may skip submitting certain feedback by index (provided in part 3).
 
 ### 5. Submit as a single batch review
 
-Use `gh api` to submit all comments as a single review (not individual comments):
-
-```bash
-gh api repos/{owner}/{repo}/pulls/{number}/reviews \
-  --method POST \
-  -f event=<APPROVE|REQUEST_CHANGES|COMMENT> \
-  -f body="<summary>" \
-  --jq '.html_url' \
-  -f 'comments[][path]=<file>' \
-  -f 'comments[][position]=<diff_position>' \
-  -f 'comments[][body]=<comment_text>'
-```
-
-Every comment body **must** start with the priority as a bold prefix, e.g. `**P0:**`, `**[P1]**`, `**[P2]**`, `**[P3]**`.
-
-For the review body/summary, leave it **empty** (`"body": ""`). Do not include summaries, priority counts (e.g. "1 P1, 3 P2"), fluff, filler, or praise. All feedback belongs in inline comments only.
-
-**Important:** The `position` field refers to the line's position within the diff hunk, not the file line number. Calculate this correctly from the diff output.
-
-If the batch API call is complex, construct the JSON payload and pass it via `--input`:
+Construct a JSON payload and submit all comments as a single review using `gh api` with `--input`:
 
 ```bash
 echo '<json_payload>' | gh api repos/{owner}/{repo}/pulls/{number}/reviews --method POST --input -
 ```
 
-The JSON payload format:
+JSON payload format:
 
 ```json
 {
   "event": "APPROVE|REQUEST_CHANGES|COMMENT",
-  "body": "Review summary here",
+  "body": "",
   "comments": [
     {
       "path": "relative/file/path.ext",
@@ -106,5 +87,11 @@ The JSON payload format:
   ]
 }
 ```
+
+Every comment body **must** start with the priority as a bold prefix: `**[P0]**`, `**[P1]**`, `**[P2]**`, or `**[P3]**`.
+
+For the review body/summary, leave it **empty** (`"body": ""`). Do not include summaries, priority counts (e.g. "1 P1, 3 P2"), fluff, filler, or praise. All feedback belongs in inline comments only.
+
+**Important:** The `position` field refers to the line's position within the diff hunk, not the file line number. Calculate this correctly from the diff output.
 
 Return the review URL to the user when complete.
