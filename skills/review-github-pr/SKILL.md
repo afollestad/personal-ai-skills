@@ -81,7 +81,8 @@ JSON payload format:
   "comments": [
     {
       "path": "relative/file/path.ext",
-      "position": 10,
+      "line": 42,
+      "side": "RIGHT",
       "body": "**[P0]** Comment text here"
     }
   ]
@@ -92,6 +93,9 @@ Every comment body **must** start with the priority as a bold prefix: `**[P0]**`
 
 For the review body/summary, leave it **empty** (`"body": ""`). Do not include summaries, priority counts (e.g. "1 P1, 3 P2"), fluff, filler, or praise. All feedback belongs in inline comments only.
 
-**Important:** The `position` field refers to the line's position within the diff hunk, not the file line number. Calculate this correctly from the diff output.
+**Important — use `line` and `side`, NOT `position`:**
+- `line`: The **file line number** in the new version of the file (the number shown after `+` in the diff hunk header, e.g. `@@ -45,15 +47,30 @@` means new lines start at 47). Count new-side lines (context lines and `+` lines, skipping `-` lines) from the hunk start to find the correct line number.
+- `side`: Always `"RIGHT"` for comments on new/changed lines.
+- Do **not** use the deprecated `position` field — it refers to a line's offset within the diff hunk and is error-prone across multi-hunk files.
 
 Return the review URL to the user when complete.
