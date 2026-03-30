@@ -66,10 +66,15 @@ The user may skip submitting certain feedback by index (provided in part 3).
 
 ### 5. Submit as a single batch review
 
-Construct a JSON payload and submit all comments as a single review using `gh api` with `--input`:
+Construct a JSON payload and submit all comments as a single review using `gh api` with `--input`.
+
+**Always write the JSON to a temp file** rather than piping via `echo` — comment bodies often contain single quotes, backticks, and other characters that break shell quoting:
 
 ```bash
-echo '<json_payload>' | gh api repos/{owner}/{repo}/pulls/{number}/reviews --method POST --input -
+cat <<'PAYLOAD' > /tmp/pr_review.json
+<json_payload>
+PAYLOAD
+gh api repos/{owner}/{repo}/pulls/{number}/reviews --method POST --input /tmp/pr_review.json
 ```
 
 JSON payload format:
@@ -94,7 +99,10 @@ Every comment body **must** start with the priority as a bold prefix: `**[P0]**`
 For the review body/summary, leave it **empty** (`"body": ""`). Do not include summaries, priority counts (e.g. "1 P1, 3 P2"), fluff, filler, or praise. All feedback belongs in inline comments only.
 
 **Important — use `line` and `side`, NOT `position`:**
-- `line`: The **file line number** in the new version of the file (the number shown after `+` in the diff hunk header, e.g. `@@ -45,15 +47,30 @@` means new lines start at 47). Count new-side lines (context lines and `+` lines, skipping `-` lines) from the hunk start to find the correct line number.
+- `line`: The **actual file line number** in the new version of the file on the PR branch. Do NOT try to calculate this from diff hunk headers — hunk offsets are error-prone. Instead, fetch the real file from the PR branch to confirm each line number before submitting:
+  ```bash
+  gh api "repos/{owner}/{repo}/contents/{path}?ref={head_branch}" --jq '.content' | base64 -d | cat -n | sed -n '{start},{end}p'
+  ```
 - `side`: Always `"RIGHT"` for comments on new/changed lines.
 - Do **not** use the deprecated `position` field — it refers to a line's offset within the diff hunk and is error-prone across multi-hunk files.
 
