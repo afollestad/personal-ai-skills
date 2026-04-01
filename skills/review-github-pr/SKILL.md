@@ -103,6 +103,7 @@ For the review body/summary, leave it **empty** (`"body": ""`). Do not include s
   ```bash
   gh api "repos/{owner}/{repo}/contents/{path}?ref={head_branch}" --jq '.content' | base64 -d | cat -n | sed -n '{start},{end}p'
   ```
+- **Only fetch files whose paths appear in the diff.** Do not guess or infer file paths that are not explicitly listed in the `gh pr diff` output — they may not exist, leading to 404 errors.
 - `side`: Always `"RIGHT"` for comments on new/changed lines.
 - Do **not** use the deprecated `position` field — it refers to a line's offset within the diff hunk and is error-prone across multi-hunk files.
 
