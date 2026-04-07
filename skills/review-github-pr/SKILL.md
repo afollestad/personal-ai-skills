@@ -2,7 +2,6 @@
 name: review-github-pr
 description: Review a PR and submit suggestions as comments, along with an optional approval/request for changes.
 compatibility: Requires git, gh, jq, and internet access.
-model: opus
 argument-hint: "[PR URL]"
 ---
 
