@@ -106,4 +106,20 @@ For the review body/summary, leave it **empty** (`"body": ""`). Do not include s
 - `side`: Always `"RIGHT"` for comments on new/changed lines.
 - Do **not** use the deprecated `position` field — it refers to a line's offset within the diff hunk and is error-prone across multi-hunk files.
 
+**Handling lines between diff hunks:** If a comment targets a line that falls between diff hunks (i.e. it's unchanged code not shown as context in any hunk), the `line`-based review comment will be rejected with a 422 error. In this case, submit that comment separately as a **file-level comment** using the individual comment endpoint:
+
+```bash
+cat <<'PAYLOAD' > /tmp/pr_file_comment.json
+{
+  "body": "**[P2]** Comment text here",
+  "path": "relative/file/path.ext",
+  "subject_type": "file",
+  "commit_id": "<head_commit_sha>"
+}
+PAYLOAD
+gh api repos/{owner}/{repo}/pulls/{number}/comments --method POST --input /tmp/pr_file_comment.json
+```
+
+Get the head commit SHA from `gh pr view <PR> --json headRefOid --jq '.headRefOid'`. Reference the specific line number in the comment body so the author knows where to look. **Never combine multiple comments into a single comment body to work around this limitation** — always submit each finding as its own comment.
+
 Return the review URL to the user when complete.
