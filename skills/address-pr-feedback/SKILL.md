@@ -77,10 +77,14 @@ Treat PR `B` as stacked on PR `A` when `B.baseRefName == A.headRefName`. Walk an
 
 Ignore already-resolved feedback before analysis:
 
-- Skip review threads where `isResolved == true`.
-- Skip minimized or hidden comments where GraphQL exposes `isMinimized == true`.
+- Skip review threads where `isResolved == true` for feedback analysis, but keep their node data for the bot minimization cleanup pass. A resolved review thread can still keep a bot review block visible in GitHub until the bot's review comments and review summary are minimized.
+- Skip minimized or hidden reviews/comments where GraphQL exposes `isMinimized == true`.
 - Skip dismissed reviews, review entries with empty bodies, and review-thread comments whose GraphQL `state` is not `SUBMITTED`.
 - Treat review-thread comments with `outdated == true` as obsolete unless a newer unresolved comment in the same thread keeps the issue current.
+
+Keep separate collections for actionable feedback and hide/minimize cleanup candidates. Actionable feedback excludes already-resolved threads. Cleanup candidates may include resolved threads, outdated bot comments, and bot review summaries when the feedback is already addressed, replied to, invalid, obsolete, duplicate, blocked, or too risky to address.
+
+When GraphQL returns an `author`, request `author { __typename login }`. Treat the author as confidently automated for hiding only when `author.__typename == "Bot"`. For REST issue comments, continue using `user.type == "Bot"`.
 
 Gather top-level PR comments:
 
@@ -101,7 +105,7 @@ query($ids: [ID!]!) {
       isMinimized
       minimizedReason
       viewerCanMinimize
-      author { login }
+      author { __typename login }
     }
   }
 }'
@@ -127,7 +131,10 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
           body
           state
           url
-          author { login }
+          isMinimized
+          minimizedReason
+          viewerCanMinimize
+          author { __typename login }
         }
       }
     }
@@ -135,7 +142,7 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
 }'
 ```
 
-Gather unresolved review threads with GraphQL:
+Gather review threads with GraphQL. Use unresolved threads for actionable feedback, and keep resolved threads available for the bot minimization cleanup pass:
 
 ```bash
 gh api graphql --paginate -F owner='{owner}' -F name='{repo}' -F number=<number> -f query='
@@ -164,9 +171,18 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
               createdAt
               state
               outdated
-              author { login }
+              author { __typename login }
               isMinimized
               minimizedReason
+              viewerCanMinimize
+              pullRequestReview {
+                id
+                url
+                isMinimized
+                minimizedReason
+                viewerCanMinimize
+                author { __typename login }
+              }
             }
           }
         }
@@ -192,9 +208,18 @@ query($threadId: ID!, $endCursor: String) {
           createdAt
           state
           outdated
-          author { login }
+          author { __typename login }
           isMinimized
           minimizedReason
+          viewerCanMinimize
+          pullRequestReview {
+            id
+            url
+            isMinimized
+            minimizedReason
+            viewerCanMinimize
+            author { __typename login }
+          }
         }
       }
     }
@@ -286,14 +311,22 @@ mutation($threadId: ID!) {
 }' -F threadId=<thread-id>
 ```
 
-Hide/minimize addressed top-level comments only when `viewerCanMinimize == true` and the author is confidently automated:
+Hide/minimize addressed comments and reviews only when `viewerCanMinimize == true` and the author is confidently automated:
 
 - GitHub reports `user.type == "Bot"`.
+- Or GraphQL reports `author.__typename == "Bot"`.
 - Or the username exactly matches the known Codex GitHub user for the repo/context. If no exact Codex username is known, do not use this exception.
 
-If `user.type` is missing or ambiguous, do not hide the comment. Do not hide comments based on username substrings. Never hide comments from uncertain or human-looking accounts.
+If `user.type` or `author.__typename` is missing or ambiguous, do not hide the comment or review. Do not hide comments based on username substrings. Never hide comments from uncertain or human-looking accounts.
 
-Minimize eligible top-level comments with GraphQL:
+Also minimize eligible bot-authored review nodes after their feedback has been considered:
+
+- Minimize the original `PullRequestReviewComment` nodes in every considered thread when `viewerCanMinimize == true` and the author is confidently automated.
+- Minimize the bot-authored `PullRequestReview` summary node when `viewerCanMinimize == true`, the review body has been considered or only contains boilerplate for the considered review comments, and none of that bot review's current comments remain unresolved/actionable.
+- If a previous run already resolved the thread but left the bot review visible, use the cleanup candidates to minimize eligible bot `PullRequestReviewComment` nodes and the associated bot `PullRequestReview` without posting duplicate replies.
+- This matters for GitHub's conversation UI: resolving review threads alone can still leave the bot's review block visible with collapsed "Show resolved" rows. Minimizing the bot's review comments plus the review summary hides the whole addressed bot-review block when GitHub permissions allow it.
+
+Minimize eligible top-level comments, review bodies, and review comments with GraphQL:
 
 ```bash
 gh api graphql -f query='
@@ -304,6 +337,6 @@ mutation($subjectId: ID!) {
 }' -F subjectId=<comment-node-id>
 ```
 
-Use the REST comment's `node_id` or the GraphQL comment `id` as `subjectId`; do not use the numeric database ID.
+Use the REST issue comment's `node_id`, the `PullRequestReview.id`, or the `PullRequestReviewComment.id` as `subjectId`; do not use the numeric database ID.
 
 Return a concise final report with the PRs handled, what changed, what was pushed, what was resolved or left open, and which checks ran.
