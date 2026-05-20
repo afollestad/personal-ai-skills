@@ -1,5 +1,5 @@
 ---
-name: review-github-pr
+name: review-pr
 description: Review a PR and submit suggestions as comments, along with an optional approval/request for changes.
 compatibility: Requires git, gh, jq, and internet access.
 argument-hint: "[PR URL]"
