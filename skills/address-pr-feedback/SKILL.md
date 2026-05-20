@@ -4,7 +4,7 @@ description: |
   Address, fix, respond to, or resolve GitHub pull request feedback. Use when
   the user asks to handle PR review comments, or address feedback on PRs.
 compatibility: Requires git, gh, jq, and internet access. Optionally uses gt for Graphite-managed stacks.
-argument-hint: "[PR URL|PR number|branch]"
+argument-hint: "[PR URL|PR number|branch|session context]"
 ---
 
 This is a mutating workflow. You may edit files, rewrite commits, push branches, reply to comments, resolve threads, and hide eligible bot comments. Act immediately unless the user explicitly asks for a checkpoint.
@@ -20,13 +20,30 @@ All direct GitHub API, comment, review, and PR metadata operations must use the 
 
 ## Find Target PRs
 
-Use the PR URL, PR number, or branch the user supplied. If none was supplied, use the PR for the checked-out branch:
+Use the PR URL, PR number, or branch the user supplied explicitly.
+
+If the current user message does not provide target PRs, inspect the current session before looking at the checked-out branch. Treat concrete session context as stronger evidence than the local checkout because the user may be asking about a PR or stack discussed earlier while the worktree is on a different branch. Prefer the newest relevant session context, and ignore older PR or branch mentions when a later user message redirects the task. Look for:
+
+- GitHub PR URLs, PR numbers, or branch names mentioned earlier in the conversation.
+- GitHub, Buildkite, Graphite, or CI links whose repo, PR number, branch, or commit can identify a PR.
+- Prior assistant tool output in this session that named PRs, branch names, stack branches, or `gh pr`/`gt` results.
+
+Only infer targets from concrete identifiers visible in the session; do not guess from vague feature names. If the session identifies one or more PRs, resolve those candidates first with `gh`:
+
+```bash
+gh pr view <PR> --json number,title,url,baseRefName,headRefName,headRefOid,state,isCrossRepository,maintainerCanModify,headRepository,headRepositoryOwner
+gh pr list --state open --head <branch> --json number,title,url,baseRefName,headRefName,headRefOid,isCrossRepository,maintainerCanModify,headRepository,headRepositoryOwner
+```
+
+If multiple session-inferred candidates are plausible and the user's request does not clearly ask for the whole set or stack, stop and ask which PR to handle instead of using the checked-out branch as a tiebreaker.
+
+If no explicit or session-inferred target exists, use the PR for the checked-out branch as the fallback:
 
 ```bash
 gh pr view --json number,title,url,baseRefName,headRefName,headRefOid,state,isCrossRepository,maintainerCanModify,headRepository,headRepositoryOwner
 ```
 
-If no PR is found and the user did not supply one, stop and say there is no PR for the checked-out branch.
+If no PR is found after explicit input, session inference, and checked-branch fallback, stop and say no target PR could be determined.
 
 For each target PR, load metadata:
 
@@ -39,7 +56,7 @@ Before editing, verify the PR head branch is writable. For cross-repository PRs,
 
 ## Stacks
 
-Default to stack-aware behavior. If the PR belongs to a stack, gather feedback for the stack. If the user gives a specific PR in a stack, gather feedback for all PRs from the stack base through that PR.
+Default to stack-aware behavior. If the PR belongs to a stack, gather feedback for the stack. If the user gives or the session clearly identifies a specific PR in a stack, gather feedback for all PRs from the stack base through that PR. If the session clearly refers to a full stack or multiple PRs, gather feedback for that whole inferred set.
 
 ### Graphite
 
@@ -69,7 +86,7 @@ gh pr list --state open --head <branch> --json number,title,url,baseRefName,head
 gh pr list --state open --base <branch> --json number,title,url,baseRefName,headRefName,headRefOid,isCrossRepository,maintainerCanModify,headRepository,headRepositoryOwner
 ```
 
-Treat PR `B` as stacked on PR `A` when `B.baseRefName == A.headRefName`. Walk ancestors by looking up an open PR whose `headRefName` equals the current PR's `baseRefName`. Walk descendants by looking up open PRs whose `baseRefName` equals the current PR's `headRefName`. Use the broad `--limit 100` list as a cache, but run the targeted `--head`/`--base` lookups when the next stack link is not found there. For a supplied PR, include ancestors through that PR. For an inferred current-branch PR, include the whole connected stack.
+Treat PR `B` as stacked on PR `A` when `B.baseRefName == A.headRefName`. Walk ancestors by looking up an open PR whose `headRefName` equals the current PR's `baseRefName`. Walk descendants by looking up open PRs whose `baseRefName` equals the current PR's `headRefName`. Use the broad `--limit 100` list as a cache, but run the targeted `--head`/`--base` lookups when the next stack link is not found there. For a supplied or session-inferred specific PR, include ancestors through that PR. For an inferred current-branch PR, include the whole connected stack.
 
 `gh pr list --head` does not support `owner:branch` syntax. If multiple open PRs share the same `headRefName`, disambiguate with `headRepositoryOwner.login` and `headRepository.name`. If the owning repository is still ambiguous, stop instead of guessing the stack.
 
